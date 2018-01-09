@@ -5,17 +5,18 @@ import (
 	chmgmt "github.com/hyperledger/fabric-sdk-go/api/apitxn/chmgmtclient"
 	resmgmt "github.com/hyperledger/fabric-sdk-go/api/apitxn/resmgmtclient"
 	"github.com/hyperledger/fabric-sdk-go/def/fabapi"
+	"github.com/hyperledger/fabric-sdk-go/pkg/errors"
 	packager "github.com/hyperledger/fabric-sdk-go/pkg/fabric-client/ccpackager/gopackager"
+	"github.com/hyperledger/fabric-sdk-go/pkg/fabric-client/events"
+	"github.com/hyperledger/fabric-sdk-go/pkg/logging"
 	cb "github.com/hyperledger/fabric-sdk-go/third_party/github.com/hyperledger/fabric/protos/common"
-    "github.com/hyperledger/fabric-sdk-go/pkg/fabric-client/events"
-    "github.com/hyperledger/fabric-sdk-go/pkg/errors"
-    pb "github.com/hyperledger/fabric-sdk-go/third_party/github.com/hyperledger/fabric/protos/peer"
-    "github.com/hyperledger/fabric-sdk-go/pkg/logging"
+	pb "github.com/hyperledger/fabric-sdk-go/third_party/github.com/hyperledger/fabric/protos/peer"
 
 	"time"
 
+	"fmt"
+
 	"github.com/hyperledger/fabric-sdk-go/api/apitxn"
-    "fmt"
 )
 
 var logger = logging.NewLogger("sdkservice")
@@ -67,10 +68,10 @@ func (sdkService *SDKService) Initialize(orgID, user string) error {
 		return err
 	}
 	sdkService.syClient = sc
-	
+
 	if err := sdkService.setupEventHub(); err != nil {
-	    return err
-    }
+		return err
+	}
 
 	return nil
 }
@@ -94,7 +95,7 @@ func (sdkService *SDKService) CreateChannel(orderOrgName, orgName, channelConfig
 	if err = chMgmtClient.SaveChannel(req); err != nil {
 		return err
 	}
-	
+
 	// Wait for creating channel
 	time.Sleep(time.Second * 3)
 
@@ -183,118 +184,118 @@ func (sdkService *SDKService) InvokeCC(channelID, ccID, fcn string, args [][]byt
 	if err != nil {
 		return apitxn.TransactionID{}, false, err
 	}
- 
+
 	txRes := make(chan apitxn.ExecuteTxResponse)
-    txOpts := apitxn.ExecuteTxOpts{Notifier: txRes}
-    
+	txOpts := apitxn.ExecuteTxOpts{Notifier: txRes}
+
 	_, err = chClient.ExecuteTxWithOpts(apitxn.ExecuteTxRequest{ChaincodeID: ccID, Fcn: fcn, Args: args}, txOpts)
 	if err != nil {
 		return apitxn.TransactionID{}, false, err
 	}
-	
+
 	select {
-	case res := <- txRes:
-	   if res.Error != nil {
-	       return res.Response, false, res.Error
-       } else {
-           fmt.Println(res.TxValidationCode)
-           return res.Response, true, nil
-       }
-    }
+	case res := <-txRes:
+		if res.Error != nil {
+			return res.Response, false, res.Error
+		} else {
+			fmt.Println(res.TxValidationCode)
+			return res.Response, true, nil
+		}
+	}
 }
 
 func (sdkService *SDKService) InvokeCCAsync(channelID, ccID, fcn string, args [][]byte) (apitxn.TransactionID, error) {
-    
-    chClient, err := sdkService.SDK.NewChannelClient(channelID, "User1")
-    if err != nil {
-        return apitxn.TransactionID{}, err
-    }
-    
-    txnID, err := chClient.ExecuteTx(apitxn.ExecuteTxRequest{ChaincodeID: ccID, Fcn: fcn, Args: args})
-    if err != nil {
-        return apitxn.TransactionID{}, err
-    }
-    
-    return txnID, nil
+
+	chClient, err := sdkService.SDK.NewChannelClient(channelID, "User1")
+	if err != nil {
+		return apitxn.TransactionID{}, err
+	}
+
+	txnID, err := chClient.ExecuteTx(apitxn.ExecuteTxRequest{ChaincodeID: ccID, Fcn: fcn, Args: args})
+	if err != nil {
+		return apitxn.TransactionID{}, err
+	}
+
+	return txnID, nil
 }
 
 func (sdkService *SDKService) setupEventHub() error {
-    eventHub, err := sdkService.getEventHub()
-    if err != nil {
-        return err
-    }
-    
-    if err := eventHub.Connect(); err != nil {
-        return errors.WithMessage(err, "eventHub connect failed")
-    }
-    sdkService.EventHub = eventHub
-    
-    return nil
+	eventHub, err := sdkService.getEventHub()
+	if err != nil {
+		return err
+	}
+
+	if err := eventHub.Connect(); err != nil {
+		return errors.WithMessage(err, "eventHub connect failed")
+	}
+	sdkService.EventHub = eventHub
+
+	return nil
 }
 
 func (sdkService *SDKService) getEventHub() (fab.EventHub, error) {
-    
-    session, err := sdkService.SDK.NewPreEnrolledUserSession("org1", "Admin")
-    if err != nil {
-        return nil, err
-    }
-    
-    sc, err := sdkService.SDK.NewSystemClient(session)
-    if err != nil {
-        return nil, err
-    }
-    
-    eventHub, err := events.NewEventHub(sc)
-    if err != nil {
-        return nil, errors.WithMessage(err, "NewEventHub failed")
-    }
-    
-    foundEventHub := false
-    peerConfig, err := sdkService.syClient.Config().PeersConfig("org1")
-    if err != nil {
-        return nil, errors.WithMessage(err, "PeersConfig failed")
-    }
-    
-    for _, p := range peerConfig {
-        if p.URL != "" {
-            //("EventHub connect to peer (%s)", p.URL)
-            serverHostOverride := ""
-            if str, ok := p.GRPCOptions["ssl-target-name-override"].(string); ok {
-                serverHostOverride = str
-            }
-            eventHub.SetPeerAddr(p.EventURL, p.TLSCACerts.Path, serverHostOverride)
-            foundEventHub = true
-            break
-        }
-    }
-    
-    if !foundEventHub {
-        return nil, errors.New("event hub configuration not found")
-    }
-    
-    return eventHub, nil
+
+	session, err := sdkService.SDK.NewPreEnrolledUserSession("org1", "Admin")
+	if err != nil {
+		return nil, err
+	}
+
+	sc, err := sdkService.SDK.NewSystemClient(session)
+	if err != nil {
+		return nil, err
+	}
+
+	eventHub, err := events.NewEventHub(sc)
+	if err != nil {
+		return nil, errors.WithMessage(err, "NewEventHub failed")
+	}
+
+	foundEventHub := false
+	peerConfig, err := sdkService.syClient.Config().PeersConfig("org1")
+	if err != nil {
+		return nil, errors.WithMessage(err, "PeersConfig failed")
+	}
+
+	for _, p := range peerConfig {
+		if p.URL != "" {
+			//("EventHub connect to peer (%s)", p.URL)
+			serverHostOverride := ""
+			if str, ok := p.GRPCOptions["ssl-target-name-override"].(string); ok {
+				serverHostOverride = str
+			}
+			eventHub.SetPeerAddr(p.EventURL, p.TLSCACerts.Path, serverHostOverride)
+			foundEventHub = true
+			break
+		}
+	}
+
+	if !foundEventHub {
+		return nil, errors.New("event hub configuration not found")
+	}
+
+	return eventHub, nil
 }
 
 // RegisterTxEvent registers on the given eventhub for the give transaction
 // returns a boolean channel which receives true when the event is complete
 // and an error channel for errors
 func (sdkService *SDKService) registerTxEvent(txID apitxn.TransactionID) (chan bool, chan error) {
-    done := make(chan bool)
-    fail := make(chan error)
-    
-    // This may happended after the exec of transaction, and will never get
-    // Change to use executeTxWithOpts
-    sdkService.EventHub.RegisterTxEvent(txID, func(txId string, errorCode pb.TxValidationCode, err error) {
-        if err != nil {
-            logger.Debugf("Received error event for txid(%s)", txId)
-            fail <- err
-        } else {
-            logger.Debugf("Received success event for txid(%s)", txId)
-            done <- true
-        }
-    })
-    
-    return done, fail
+	done := make(chan bool)
+	fail := make(chan error)
+
+	// This may happended after the exec of transaction, and will never get
+	// Change to use executeTxWithOpts
+	sdkService.EventHub.RegisterTxEvent(txID, func(txId string, errorCode pb.TxValidationCode, err error) {
+		if err != nil {
+			logger.Debugf("Received error event for txid(%s)", txId)
+			fail <- err
+		} else {
+			logger.Debugf("Received success event for txid(%s)", txId)
+			done <- true
+		}
+	})
+
+	return done, fail
 }
 
 func (sdkService *SDKService) GetDefaultResMgmtClient() (resmgmt.ResourceMgmtClient, error) {

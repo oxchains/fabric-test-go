@@ -112,12 +112,12 @@ func TestSDKService_InvokeCC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize : %s", err.Error())
 	}
-	
+
 	_, execRight, err := sdkService.InvokeCC(channelID, ccID, "invoke", invokeArgs)
 	if err != nil {
 		t.Fatalf("Failed to invoke transaction")
 	}
-	
+
 	if !execRight {
 		t.Fatalf("Failed to invoke transaction rightly")
 	}
